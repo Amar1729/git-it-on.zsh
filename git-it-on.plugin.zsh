@@ -33,6 +33,7 @@ __fix_local_untracked_branch() {
 git_set_repo() {
   repo_url=$(git config --get remote.origin.url)
   if ! __set_remote_branch; then __set_local_branch; fi
+  #__set_remote_branch || __set_local_branch
   __fix_local_untracked_branch
   url="${repo_url/git/https}"
   url="${url/httpshub/github}"
@@ -207,7 +208,6 @@ gitlab_open_branches() {
 
 gitlab_open_network() {
 	git_set_repo
-	local branch="$(git rev-parse --abbrev-ref HEAD)"
 	__open "$url/network/$branch"
 }
 
@@ -216,7 +216,7 @@ gitlab_ctrlp() {
   if [ "$#" -eq 0 ]; then
     branch="master"
   else
-    branch=$1
+    branch="$1"
   fi
   __open "$url/find_file/$branch"
 }
