@@ -1,0 +1,98 @@
+#compdef gitit
+
+# TODO TODO TODO - none of the stuff in this script is wrapped in the proper way of doing autocompletions
+# primarily, it dirties up global ns something awful
+# this should all be cleaned (reference completions from a real tool like git/tmux) before pull req
+
+# TODO - unset this after completion script
+CACHE_FILE='/tmp/gitit_user_cache'
+
+function _cache {
+    # i don't think this is the best way to check arguments, but it's all i have for now
+    [[ -z "$1" ]] && return 0
+    [[ -z "$2" ]] && return 0
+    echo "$1=($2)" >> $CACHE_FILE
+}
+
+function _cached_users {
+    local USERS=($(cat $CACHE_FILE | cut -f1 -d '='))
+    echo $USERS
+}
+
+function _cached_repos {
+    [[ ! -f $CACHE_FILE ]] && touch $CACHE_FILE
+
+    # Check how old cachefile is. if it's >24 hours, re-poll
+    # TODO - this only works for the first repoll each day
+    if test `find $CACHE_FILE -mmin +1440`; then
+        # remove old info if it's there
+        sed -i -e "/^$1=/d" $CACHE_FILE
+        return 1
+    fi
+
+    if grep "^$1=" $CACHE_FILE > /dev/null; then
+        source $CACHE_FILE
+        local REPOS=($(eval "echo \$$1"))
+        echo $REPOS
+    else
+        return 1
+    fi
+}
+
+function _repos {
+    ENDPOINT="https://api.github.com/users/$1/repos"
+    PARAMS="?per_page=100&sort=updated"
+    local REPOS=($(curl "${ENDPOINT}${PARAMS}" 2>/dev/null | jq '.[] | .name' | tr -d '"'))
+    echo $REPOS
+}
+
+#### gitit commands and subcommands
+
+function _gitit {
+    local line
+
+    _arguments -C \
+        "1: :(repo)" \
+        "*::arg:->args"
+
+    case $line[1] in
+        "repo")
+            _gitit_repo_user
+            ;;
+        *)
+            ;;
+    esac
+}
+
+function _gitit_repo_user {
+    local line
+
+    local USERS=($(_cached_users))
+    _arguments \
+        "1: :($USERS)" \
+        "*::arg:->args"
+
+    # get repos of specific user
+    _gitit_repo_user_repos $line[1]
+}
+
+function _gitit_repo_user_repos {
+    # lowercase username to make caching easier
+    local USER=$(echo $1 | tr '[:upper:]' '[:lower:]')
+
+    # TODO - this is not the best way to do this !!!
+    # USER must be a completed arg before this completion function is run (it includes an API req)
+    [[ -z "$USER" ]] && return 0
+
+    local REPOS
+    #local REPOS=$(_cached_repos $USER)
+    if ! REPOS=$(_cached_repos $USER); then
+        REPOS=$(_repos $USER)
+        _cache $USER $REPOS
+    fi
+
+    _arguments \
+        "1: :($REPOS)"
+}
+
+#_gitit "$@"
