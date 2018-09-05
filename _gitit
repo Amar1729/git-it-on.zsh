@@ -5,7 +5,9 @@
 # this should all be cleaned (reference completions from a real tool like git/tmux) before pull req
 
 # TODO - unset this after completion script
+# TODO - check for existence earlier, this currently throws a warning first time script is loaded
 CACHE_FILE='/tmp/gitit_user_cache'
+[[ ! -f $CACHE_FILE ]] && touch $CACHE_FILE
 
 function _cache {
     # i don't think this is the best way to check arguments, but it's all i have for now
@@ -20,8 +22,6 @@ function _cached_users {
 }
 
 function _cached_repos {
-    [[ ! -f $CACHE_FILE ]] && touch $CACHE_FILE
-
     # Check how old cachefile is. if it's >24 hours, re-poll
     # TODO - this only works for the first repoll each day
     if test `find $CACHE_FILE -mmin +1440`; then
@@ -95,4 +95,4 @@ function _gitit_repo_user_repos {
         "1: :($REPOS)"
 }
 
-#_gitit "$@"
+_gitit "$@"
