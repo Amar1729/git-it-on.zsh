@@ -49,23 +49,54 @@ function _repos {
 #### gitit commands and subcommands
 
 function _gitit {
-    local line
+    local context state state_descr line
+    typeset -A opt_args
+
+    local gitit_describe=
 
     _arguments -C \
-        "1: :(repo)" \
-        "*::arg:->args"
+        "*::subcommand:->subcommand"
 
-    case $line[1] in
-        "repo")
-            _gitit_repo_user
-            ;;
-        *)
-            ;;
-    esac
+    if [[ ${state} == "subcommand" ]]; then
+        if (( CURRENT == 1 )); then
+            _describe -t commands 'commands' gitit_commands
+        else
+            gititcmd="${words[1]}"
+
+            # (temporary) hardcoded:
+            local _gf
+            case "$gititcmd" in
+                branch)
+                    _gf="_gitit_branch"
+                    ;;
+                repo)
+                    _gf="_gitit_repo_user"
+                    ;;
+            esac
+            $_gf
+            # _call_function ret ${_gf}
+        fi
+    fi
+
+    return 0
+}
+
+function _gitit_branch {
+    [[ -n ${gitit_describe} ]] && print "open particular branch" && return
+
+    # TODO - add a describe saying full name of br including remote
+    _branches=($(for br in $(git rev-parse --abbrev-ref --remotes); do
+        echo "${br#*/}"
+    done))
+
+    _arguments "*:branch:($_branches)"
 }
 
 function _gitit_repo_user {
-    local line
+    [[ -n ${gitit_describe} ]] && print "open repository with user/repo name" && return
+
+    local context state state_descr line
+    typeset -A opt_args
 
     local USERS=($(_cached_users))
     _arguments \
@@ -94,5 +125,21 @@ function _gitit_repo_user_repos {
     _arguments \
         "1: :($REPOS)"
 }
+
+local desc
+local gitit_describe
+gitit_describe='yes, please'
+
+typeset -ga gitit_commands gitit_commands_tmp
+gitit_commands_tmp=(
+    _gitit_branch
+    _gitit_repo_user
+)
+
+# simple description gen
+for f in $gitit_commands_tmp; do
+    desc="$($f)"
+    gitit_commands+=( "${${f#_gitit_}%%_*}${desc:+:$desc}" )
+done
 
 _gitit "$@"
