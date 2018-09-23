@@ -4,24 +4,32 @@
 # primarily, it dirties up global ns something awful
 # this should all be cleaned (reference completions from a real tool like git/tmux) before pull req
 
+typeset -ga _gitit_commands
+
 # TODO - unset this after completion script
-# TODO - check for existence earlier, this currently throws a warning first time script is loaded
 CACHE_FILE='/tmp/gitit_user_cache'
 [[ ! -f $CACHE_FILE ]] && touch $CACHE_FILE
 
-function _cache {
+function __gitit-cache {
     # i don't think this is the best way to check arguments, but it's all i have for now
     [[ -z "$1" ]] && return 0
     [[ -z "$2" ]] && return 0
     echo "$1=($2)" >> $CACHE_FILE
 }
 
-function _cached_users {
-    local USERS=($(cat $CACHE_FILE | cut -f1 -d '='))
+function __gitit-cached-users {
+    local USERS=($(cat $CACHE_FILE 2>/dev/null | cut -f1 -d '='))
     echo $USERS
 }
 
-function _cached_repos {
+function __gitit-cached-repos {
+    # TODO - there maybe should be timestamps for each username so polling can
+    # be independent of file mod time?
+
+    # put this here for now
+    # (if cachefile is deleted while a terminal is open, it won't be recreated at _gitit init)
+    [[ ! -f $CACHE_FILE ]] && touch $CACHE_FILE
+
     # Check how old cachefile is. if it's >24 hours, re-poll
     # TODO - this only works for the first repoll each day
     if test `find $CACHE_FILE -mmin +1440`; then
@@ -39,7 +47,12 @@ function _cached_repos {
     fi
 }
 
-function _repos {
+function __gitit-repos {
+    # safety checks
+    # TODO - actually make sure these safety checks work!
+    #[[ -z "$1" ]] && return 0 # i dont think this one is necessary
+    if ! $(which jq > /dev/null); then return 0; fi
+
     ENDPOINT="https://api.github.com/users/$1/repos"
     PARAMS="?per_page=100&sort=updated"
     local REPOS=($(curl "${ENDPOINT}${PARAMS}" 2>/dev/null | jq '.[] | .name' | tr -d '"'))
@@ -59,29 +72,28 @@ function _gitit {
 
     if [[ ${state} == "subcommand" ]]; then
         if (( CURRENT == 1 )); then
-            _describe -t commands 'commands' gitit_commands
+            # (from tmux) wtf is this for?
+            #zstyle -s ":completion:${curcontext}:subcommands" mode mode || mode='both'
+            _describe -t commands 'commands' _gitit_commands
         else
-            gititcmd="${words[1]}"
-
-            # (temporary) hardcoded:
-            local _gf
-            case "$gititcmd" in
-                branch)
-                    _gf="_gitit_branch"
-                    ;;
-                repo)
-                    _gf="_gitit_repo_user"
-                    ;;
-            esac
-            $_gf
-            # _call_function ret ${_gf}
+            local gititcmd="_gitit-${words[1]}"
+            $gititcmd
+            # should change to this eventually? :
+            # _call_function ret ${gititcmd}
         fi
     fi
 
     return 0
 }
 
-function _gitit_branch {
+# --- Sub-command functions ---
+# These functions provide completion for gitit subommands
+# They MUST be named as _gitit_<subcmd>
+# They all must check $gitit_describe, print a description,
+# and return if it's nonempty.
+# Other utility functions should be named __gitit-*
+
+function _gitit-branch {
     [[ -n ${gitit_describe} ]] && print "open particular branch" && return
 
     # TODO - add a describe saying full name of br including remote
@@ -89,57 +101,50 @@ function _gitit_branch {
         echo "${br#*/}"
     done))
 
-    _arguments "*:branch:($_branches)"
+    _arguments ":branch:($_branches)"
 }
 
-function _gitit_repo_user {
+function _gitit-repo {
     [[ -n ${gitit_describe} ]] && print "open repository with user/repo name" && return
 
     local context state state_descr line
     typeset -A opt_args
 
-    local USERS=($(_cached_users))
-    _arguments \
+    # complete the username first
+    local USERS=($(__gitit-cached-users))
+    _arguments -C \
         "1: :($USERS)" \
-        "*::arg:->args"
+        "::arg:->args"
 
-    # get repos of specific user
-    _gitit_repo_user_repos $line[1]
-}
+    # if USER is there, complete the repository name
+    if [[ ${state} == "args" && -n "${words[2]}" ]]; then
+        # lowercase username to make caching easier
+        local USER=$(echo ${words[2]} | tr '[:upper:]' '[:lower:]')
 
-function _gitit_repo_user_repos {
-    # lowercase username to make caching easier
-    local USER=$(echo $1 | tr '[:upper:]' '[:lower:]')
+        local REPOS
+        if ! REPOS=$(__gitit-cached-repos $USER); then
+            REPOS=$(__gitit-repos $USER)
+            __gitit-cache $USER $REPOS
+        fi
 
-    # TODO - this is not the best way to do this !!!
-    # USER must be a completed arg before this completion function is run (it includes an API req)
-    [[ -z "$USER" ]] && return 0
-
-    local REPOS
-    #local REPOS=$(_cached_repos $USER)
-    if ! REPOS=$(_cached_repos $USER); then
-        REPOS=$(_repos $USER)
-        _cache $USER $REPOS
+        # add repo names as completion candidates
+        _alternative "($REPOS)"
     fi
-
-    _arguments \
-        "1: :($REPOS)"
 }
 
+# description generation - how it works:
+# ${(k)functions} gets the keys (names of the) locally defined functions
+# ${(M)...:#_gitit-*} matches the functions that begin with '_gitit-'
+# i.e. _gitit-branch, _gitit-repo, etc
+# Each function prints a "description" line when it's called if
+# gitit_describe is a nonempty variable (the first time _gitit is loaded by shell)
+# Then each subcommand:description pair is added to the _gitit_commands array
 local desc
 local gitit_describe
 gitit_describe='yes, please'
-
-typeset -ga gitit_commands gitit_commands_tmp
-gitit_commands_tmp=(
-    _gitit_branch
-    _gitit_repo_user
-)
-
-# simple description gen
-for f in $gitit_commands_tmp; do
+for f in ${(M)${(k)functions}:#_gitit-*}; do
     desc="$($f)"
-    gitit_commands+=( "${${f#_gitit_}%%_*}${desc:+:$desc}" )
+    _gitit_commands+=( "${f#_gitit-}${desc:+:$desc}" )
 done
 
 _gitit "$@"
