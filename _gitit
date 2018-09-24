@@ -10,6 +10,10 @@ typeset -ga _gitit_commands
 CACHE_FILE='/tmp/gitit_user_cache'
 [[ ! -f $CACHE_FILE ]] && touch $CACHE_FILE
 
+# --- Utility functions ---
+# They should be called __gitit-*() and kept separate from the
+# sub-command functions.
+
 function __gitit-cache {
     # i don't think this is the best way to check arguments, but it's all i have for now
     [[ -z "$1" ]] && return 0
@@ -86,6 +90,8 @@ function __gitit-bare {
         ':branch:_gitit-branch'
 }
 
+# technically a utility function, but this manages the subcommand description
+# generation and all completions for subcommands
 function __gitit-subcmd {
     local context state state_descr line
     typeset -A opt_args
@@ -101,10 +107,9 @@ function __gitit-subcmd {
             #zstyle -s ":completion:${curcontext}:subcommands" mode mode || mode='both'
             _describe -t commands 'commands' _gitit_commands
         else
-            local gititcmd="_gitit-${words[1]}"
-            $gititcmd
             # should change to this eventually? :
             # _call_function ret ${gititcmd}
+            _gitit-${words[1]}
         fi
     fi
 
@@ -148,7 +153,7 @@ function _gitit-repo {
     # complete the username first
     local USERS=($(__gitit-cached-users))
     _arguments -C \
-        "1: :($USERS)" \
+        "1:user:($USERS)" \
         "::arg:->args"
 
     # if USER is there, complete the repository name
@@ -163,7 +168,7 @@ function _gitit-repo {
         fi
 
         # add repo names as completion candidates
-        _alternative "($REPOS)"
+        _arguments "2:repo:($REPOS)"
     fi
 }
 
@@ -214,9 +219,36 @@ function _gitit-grep  {
 }
 
 function _gitit-ctrlp {
-    [[ -n ${gitit_describe} ]] && print "opens the github file finder for a branch (default: master) (note that you cannot pass search terms directly from the command line)" && return
+    [[ -n ${gitit_describe} ]] && print "opens the github file finder for a branch (default: master)" && return
 
     _arguments ":branches:_gitit-branch"
+}
+
+# _gitit and __gitit-subcmd orchestrate the completions
+function _gitit {
+    local context state state_descr line
+    typeset -A opt_args
+
+    _arguments -C \
+        '1:file:_files'
+
+    _arguments -C \
+        '1:subcmd:__gitit-subcmd'
+
+    # if the second word is completed, check if it's a subcommand or filename
+    if [[ -n ${words[2]} ]]; then
+
+        if [[ -n "${_gitit_commands[(r)${words[2]}:*]}" ]]; then
+            # start subcommand completions
+            __gitit-subcmd
+        else
+            # no argument usage: gitit <file> [<branch>]
+            _arguments \
+                ':files:_files' \
+                ':branch:_gitit-branch'
+        fi
+
+    fi
 }
 
 # description generation - how it works:
