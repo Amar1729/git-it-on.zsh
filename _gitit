@@ -88,7 +88,7 @@ function _gitit {
 
 # --- Sub-command functions ---
 # These functions provide completion for gitit subommands
-# They MUST be named as _gitit_<subcmd>
+# They MUST be named as _gitit-<subcmd>
 # They all must check $gitit_describe, print a description,
 # and return if it's nonempty.
 # Other utility functions should be named __gitit-*
@@ -96,16 +96,26 @@ function _gitit {
 function _gitit-branch {
     [[ -n ${gitit_describe} ]] && print "open particular branch" && return
 
-    # TODO - add a describe saying full name of br including remote
-    _branches=($(for br in $(git rev-parse --abbrev-ref --remotes); do
-        echo "${br#*/}"
-    done))
+    # eventual TODO - add remotes as candidates when that functionality is added to gitit
+    local -a _branches
+    for br in $(git rev-parse --abbrev-ref --remotes); do
+        local desc="${br#*/}${br:+:$br}"
+        if [[ ! ${_branches[(r)${desc}]} == ${desc} ]]; then
+            _branches+=( ${desc} )
+        fi
+    done
 
-    _arguments ":branch:($_branches)"
+    _describe -t arguments 'arguments' _branches
 }
 
 function _gitit-repo {
-    [[ -n ${gitit_describe} ]] && print "open repository with user/repo name" && return
+    [[ -n ${gitit_describe} ]] && print "open repository with user/repo name (requires jq)" && return
+
+    # check for existence of jq!
+    if (( ${+commands[jq]} == 0 )); then
+        _message '`jq'\'' not found in $path; repo sub-cmd completions disabled.'
+        return
+    fi
 
     local context state state_descr line
     typeset -A opt_args
