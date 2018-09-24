@@ -54,40 +54,15 @@ function __gitit-cached-repos {
 function __gitit-repos {
     ENDPOINT="https://api.github.com/users/$1/repos"
     PARAMS="?per_page=100&sort=updated"
-    local REPOS=($(curl "${ENDPOINT}${PARAMS}" 2>/dev/null | jq '.[] | .name' | tr -d '"'))
-    echo $REPOS
-}
+    local result=$(curl "${ENDPOINT}${PARAMS}" 2>/dev/null)
 
-#### gitit commands and subcommands
-
-function _gitit {
-
-    # this almost works!
-    #_alternative __gitit-bare -- __gitit-subcmd
-    _arguments -C \
-        '1:file:__gitit-bare'
-
-    _arguments -C \
-        '1:subcmd:__gitit-subcmd'
-
-    # if the second word is completed, check if it's a subcommand or filename
-    if [[ -n ${words[2]} ]]; then
-
-        if [[ -n "${_gitit_commands[(r)${words[2]}:*]}" ]]; then
-            # start subcommand completions
-            __gitit-subcmd
-        else
-            # no argument usage: gitit <file> [<branch>]
-            __gitit-bare
-        fi
-
+    # checks if user exists
+    if [[ $(jq '.message?' <<< ${result} 2>/dev/null) == '"Not Found"' ]]; then
+        _message "$1: user does not exist" && return 0
     fi
-}
 
-function __gitit-bare {
-    _arguments \
-        ':files:_files' \
-        ':branch:_gitit-branch'
+    local REPOS=($(jq '.[] | .name' <<< ${result} | tr -d '"'))
+    echo $REPOS
 }
 
 # technically a utility function, but this manages the subcommand description
