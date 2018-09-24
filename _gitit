@@ -48,11 +48,6 @@ function __gitit-cached-repos {
 }
 
 function __gitit-repos {
-    # safety checks
-    # TODO - actually make sure these safety checks work!
-    #[[ -z "$1" ]] && return 0 # i dont think this one is necessary
-    if ! $(which jq > /dev/null); then return 0; fi
-
     ENDPOINT="https://api.github.com/users/$1/repos"
     PARAMS="?per_page=100&sort=updated"
     local REPOS=($(curl "${ENDPOINT}${PARAMS}" 2>/dev/null | jq '.[] | .name' | tr -d '"'))
@@ -62,6 +57,36 @@ function __gitit-repos {
 #### gitit commands and subcommands
 
 function _gitit {
+
+    # this almost works!
+    #_alternative __gitit-bare -- __gitit-subcmd
+    _arguments -C \
+        '1:file:__gitit-bare'
+
+    _arguments -C \
+        '1:subcmd:__gitit-subcmd'
+
+    # if the second word is completed, check if it's a subcommand or filename
+    if [[ -n ${words[2]} ]]; then
+
+        if [[ -n "${_gitit_commands[(r)${words[2]}:*]}" ]]; then
+            # start subcommand completions
+            __gitit-subcmd
+        else
+            # no argument usage: gitit <file> [<branch>]
+            __gitit-bare
+        fi
+
+    fi
+}
+
+function __gitit-bare {
+    _arguments \
+        ':files:_files' \
+        ':branch:_gitit-branch'
+}
+
+function __gitit-subcmd {
     local context state state_descr line
     typeset -A opt_args
 
@@ -140,6 +165,58 @@ function _gitit-repo {
         # add repo names as completion candidates
         _alternative "($REPOS)"
     fi
+}
+
+function _gitit-compare {
+    [[ -n ${gitit_describe} ]] && print "opens the compare file between a branch and master" && return
+
+    _arguments ":branches:_gitit-branch"
+}
+
+function _gitit-commits {
+    [[ -n ${gitit_describe} ]] && print "opens the commits for your current branch" && return
+
+    _arguments ":branches:_gitit-branch"
+}
+
+function _gitit-issues {
+    [[ -n ${gitit_describe} ]] && print "open the list of issues" && return
+
+    # nothing else to complete!
+}
+
+function _gitit-history  {
+    [[ -n ${gitit_describe} ]] && print "opens the github history page for a file" && return
+
+    _arguments \
+        '1:file:_files' \
+        ':branches:_gitit-branch'
+}
+
+function _gitit-pulls {
+    [[ -n ${gitit_describe} ]] && print "open the list of pull requests for the repo" && return
+
+    # complicated:
+    # * `gitit pulls <filters>` -- open with filters (e.g., `is:open`, `author:peterhurford`)
+    # * `gitit pulls <number>` -- open PR #number
+}
+
+function _gitit-branches {
+    [[ -n ${gitit_describe} ]] && print "open up a specific list of branches in the repo" && return
+
+    _alternative '(all active stale mine)'
+}
+
+function _gitit-grep  {
+    [[ -n ${gitit_describe} ]] && print "opens the github search page for your term" && return
+
+    # nothing else to complete!
+}
+
+function _gitit-ctrlp {
+    [[ -n ${gitit_describe} ]] && print "opens the github file finder for a branch (default: master) (note that you cannot pass search terms directly from the command line)" && return
+
+    _arguments ":branches:_gitit-branch"
 }
 
 # description generation - how it works:
