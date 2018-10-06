@@ -65,6 +65,45 @@ function __gitit-repos {
     echo $REPOS
 }
 
+# don't really want to cache these ...
+# possibly just hold in a global var?
+# rewrite on each new successive call of pulls? not sure ...
+function __gitit-pulls {
+    ENDPOINT="https://api.github.com/repos/$1/$2/pulls"
+    local result=$(curl "${ENDPOINT}" 2>/dev/null)
+
+    # TODO
+    # checks if return is ok
+    #if [[ $(jq '.message?' <<< ${result} 2>/dev/null) == '"Not Found"' ]]; then
+    #    _message "$1: user does not exist" && return 0
+    #fi
+
+    local title state number
+    local -a pulls
+    for hash in $(jq -r '.[] | @base64' <<< ${result}); do
+        _jq () {
+            echo ${hash} | base64 --decode | jq -r ${1}
+        }
+
+        number=$(_jq '.number')
+        title=$(_jq '.title')
+        state=$(_jq '.state')
+
+        pulls+=( "${number}:(${state}) ${title}" )
+    done
+
+    local pull_str=""
+    for pe in ${pulls[@]}; do
+        if [[ -z "$pull_str" ]]; then
+            pull_str="${pe}"
+        else
+            pull_str="${pull_str}:::${pe}"
+        fi
+    done
+
+    echo "${pull_str}"
+}
+
 # technically a utility function, but this manages the subcommand description
 # generation and all completions for subcommands
 function __gitit-subcmd {
@@ -179,6 +218,36 @@ function _gitit-pulls {
     # complicated:
     # * `gitit pulls <filters>` -- open with filters (e.g., `is:open`, `author:peterhurford`)
     # * `gitit pulls <number>` -- open PR #number
+
+    # so i got this working - no `pulls' defined, then it becomes defined
+    # first runthrough, then loop doesn't hapen again. this is almost enough
+    # need it to be cleared out if some part of `gitit pulls' is deleted?
+    typeset -ga pulls
+    typeset -g _REPO _USER # cache previous values to check if user cd'd
+    local URL REPO USER
+
+    # get username and reponame
+    URL=$(git config --get remote.origin.url)
+    # NOTE - this assumes you can't have slashes in repo/user names ?
+    REPO=${URL##*/}
+    USER=${${${URL%/*}##*/}##*:} # look backward - agnostic of http/ssh urls
+
+    if [[ $REPO != $_REPO ]] || [[ $USER != $_USER ]]; then
+        unset pulls
+        _REPO=$REPO
+        _USER=$USER
+    fi
+
+    if [[ $#pulls -eq 0 ]]; then
+        local pull_s=$(__gitit-pulls $_USER $_REPO)
+        while [[ $pull_s == *":::"* ]]; do
+            pulls+=( ${pull_s%%:::*} )
+            pull_s=${pull_s#*:::}
+        done
+        pulls+=( ${pull_s} )
+    fi
+
+    _describe -t pull 'pull' pulls
 }
 
 function _gitit-branches {
