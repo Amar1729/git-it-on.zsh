@@ -65,18 +65,15 @@ function __gitit-repos {
     echo $REPOS
 }
 
-# don't really want to cache these ...
-# possibly just hold in a global var?
-# rewrite on each new successive call of pulls? not sure ...
+# doesn't cache pulls, but stores them in global _gitit_pulls array
 function __gitit-pulls {
     ENDPOINT="https://api.github.com/repos/$1/$2/pulls"
     local result=$(curl "${ENDPOINT}" 2>/dev/null)
 
-    # TODO
-    # checks if return is ok
-    #if [[ $(jq '.message?' <<< ${result} 2>/dev/null) == '"Not Found"' ]]; then
-    #    _message "$1: user does not exist" && return 0
-    #fi
+    # check length of list of pulls:
+    if [[ $(jq '. | length' <<< ${result}) -eq 0 ]]; then
+        _message "No pulls to complete" && return 0
+    fi
 
     local hash hash_dec title state number
     for hash in $(jq -r '.[] | @base64' <<< ${result}); do
@@ -220,9 +217,17 @@ function _gitit-pulls {
 
     # get username and reponame
     URL=$(git config --get remote.origin.url)
-    # NOTE - this assumes you can't have slashes in repo/user names ?
-    REPO=${URL##*/}
-    USER=${${${URL%/*}##*/}##*:} # look backward - agnostic of http/ssh urls
+
+    if [[ -z $URL ]]; then
+        _message "Repository doesn't have a remote"
+        return
+    fi
+
+    # NOTE - this assumes you can't have / or : in repo/user names
+    # delete everything before last slash, delete the possible suffix '.git'
+    REPO=${${URL##*/}%.git}
+    # delete last slash+word, then delete everything before / or :
+    USER=${${${URL%/*}##*/}##*:}
 
     if [[ $REPO != $_gitit_REPO ]] || [[ $USER != $_gitit_USER ]]; then
         unset _gitit_pulls
