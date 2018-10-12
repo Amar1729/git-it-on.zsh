@@ -1,9 +1,5 @@
 #compdef gitit
 
-# TODO TODO TODO - none of the stuff in this script is wrapped in the proper way of doing autocompletions
-# primarily, it dirties up global ns something awful
-# this should all be cleaned (reference completions from a real tool like git/tmux) before pull req
-
 typeset -ga _gitit_commands
 
 # TODO - unset this after completion script
@@ -110,7 +106,10 @@ function _gitit-branch {
         fi
     done
 
-    _describe -t arguments 'arguments' _branches
+    # TODO - how to stop offering these completions after one is completed?
+    # using _arguments works for THIS function, but screws up others
+    #_arguments ":branches:(($_branches))"
+    _describe -t branches 'branches' _branches
 }
 
 function _gitit-repo {
@@ -184,7 +183,7 @@ function _gitit-pulls {
 function _gitit-branches {
     [[ -n ${gitit_describe} ]] && print "open up a specific list of branches in the repo" && return
 
-    _alternative '(all active stale mine)'
+    _arguments '1:branch lists:(all active stale mine)'
 }
 
 function _gitit-grep  {
